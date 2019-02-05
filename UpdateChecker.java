@@ -8,6 +8,7 @@ import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.permissions.Permission;
 import org.bukkit.permissions.PermissionDefault;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scheduler.BukkitRunnable;
 
 import javax.net.ssl.HttpsURLConnection;
 import java.io.BufferedReader;
@@ -28,6 +29,7 @@ public class UpdateChecker {
     //PermissionDefault.FALSE == OPs need the permission to be notified.
     //PermissionDefault.TRUE == all OPs are notified regardless of having the permission.
     private static final Permission UPDATE_PERM = new Permission("yourplugin.update", PermissionDefault.FALSE);
+    private static final long CHECK_INTERVAL = 12_000; //In ticks.
 
     public UpdateChecker(final JavaPlugin javaPlugin) {
         this.javaPlugin = javaPlugin;
@@ -35,33 +37,38 @@ public class UpdateChecker {
     }
 
     public void checkForUpdate() {
-        //The request is executed asynchronously as to not block the main thread.
-        Bukkit.getScheduler().runTaskAsynchronously(this.javaPlugin, () -> {
-            //Request the current version of your plugin on SpigotMC.
-            try {
-                HttpsURLConnection connection = (HttpsURLConnection) new URL("https://api.spigotmc.org/legacy/update.php?resource=" + ID).openConnection();
-                connection.setRequestMethod("GET");
-                this.spigotPluginVersion = new BufferedReader(new InputStreamReader(connection.getInputStream())).readLine();
-            } catch (IOException e) {
-                Bukkit.getServer().getConsoleSender().sendMessage(ChatColor.translateAlternateColorCodes('&', ERR_MSG));
-                e.printStackTrace();
-                return;
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                //The request is executed asynchronously as to not block the main thread.
+                Bukkit.getScheduler().runTaskAsynchronously(javaPlugin, () -> {
+                    //Request the current version of your plugin on SpigotMC.
+                    try {
+                        final HttpsURLConnection connection = (HttpsURLConnection) new URL("https://api.spigotmc.org/legacy/update.php?resource=" + ID).openConnection();
+                        connection.setRequestMethod("GET");
+                        spigotPluginVersion = new BufferedReader(new InputStreamReader(connection.getInputStream())).readLine();
+                    } catch (final IOException e) {
+                        Bukkit.getServer().getConsoleSender().sendMessage(ChatColor.translateAlternateColorCodes('&', ERR_MSG));
+                        e.printStackTrace();
+                        return;
+                    }
+
+                    //Check if the requested version is the same as the one in your plugin.yml.
+                    if (localPluginVersion.equals(spigotPluginVersion)) return;
+
+                    Bukkit.getServer().getConsoleSender().sendMessage(ChatColor.translateAlternateColorCodes('&', UPDATE_MSG));
+
+                    //Register the PlayerJoinEvent
+                    Bukkit.getScheduler().runTask(javaPlugin, () -> Bukkit.getPluginManager().registerEvents(new Listener() {
+                        @EventHandler(priority = EventPriority.MONITOR)
+                        public void onPlayerJoin(final PlayerJoinEvent event) {
+                            final Player player = event.getPlayer();
+                            if (!player.hasPermission(UPDATE_PERM)) return;
+                            player.sendMessage(ChatColor.translateAlternateColorCodes('&', UPDATE_MSG));
+                        }
+                    }, javaPlugin));
+                });
             }
-
-            //Check if the requested version is the same as the one in your plugin.yml.
-            if (this.localPluginVersion.equals(this.spigotPluginVersion)) return;
-
-            Bukkit.getServer().getConsoleSender().sendMessage(ChatColor.translateAlternateColorCodes('&', UPDATE_MSG));
-
-            //Register the PlayerJoinEvent
-            Bukkit.getScheduler().runTask(this.javaPlugin, () -> Bukkit.getPluginManager().registerEvents(new Listener() {
-                @EventHandler(priority = EventPriority.MONITOR)
-                public void onPlayerJoin(PlayerJoinEvent event) {
-                    Player player = event.getPlayer();
-                    if (!player.hasPermission(UPDATE_PERM)) return;
-                    player.sendMessage(ChatColor.translateAlternateColorCodes('&', UPDATE_MSG));
-                }
-            }, this.javaPlugin));
-        });
+        }.runTaskTimer(javaPlugin, 0, CHECK_INTERVAL);
     }
 }
