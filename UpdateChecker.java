@@ -50,6 +50,7 @@ public class UpdateChecker {
                     } catch (final IOException e) {
                         Bukkit.getServer().getConsoleSender().sendMessage(ChatColor.translateAlternateColorCodes('&', ERR_MSG));
                         e.printStackTrace();
+                        cancel();
                         return;
                     }
 
@@ -67,6 +68,8 @@ public class UpdateChecker {
                             player.sendMessage(ChatColor.translateAlternateColorCodes('&', UPDATE_MSG));
                         }
                     }, javaPlugin));
+                    
+                    cancel(); //Cancel the runnable as an update has been found.
                 });
             }
         }.runTaskTimer(javaPlugin, 0, CHECK_INTERVAL);
